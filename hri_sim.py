@@ -3,146 +3,107 @@ import pybullet_data
 import cv2
 import numpy as np
 import time
-
-# --- DIRECT IMPORTS (Proven to bypass the solutions error) ---
 import mediapipe as mp
-from mediapipe.python.solutions import hands as mp_hands
-from mediapipe.python.solutions import drawing_utils as mp_draw
 
-# --- 1. Simulation & Environment Setup ---
+# --- 1. Simulation Setup ---
 p.connect(p.GUI)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
 p.setGravity(0, 0, -9.81)
-p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=50, cameraPitch=-35, cameraTargetPosition=[0.5, 0, 0.5])
+p.resetDebugVisualizerCamera(1.5, 45, -30, [0.5, 0, 0.5])
 
 p.loadURDF("plane.urdf")
-p.loadURDF("table/table.urdf", [0.5, 0, 0], [0, 0, 0, 1])
+p.loadURDF("table/table.urdf", [0.5, 0, 0])
 
-# Create Visual Zones (Bins) - Using transparent colors
-blue_zone_viz = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.12, 0.12, 0.005], rgbaColor=[0, 0, 1, 0.4])
-red_zone_viz = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.12, 0.12, 0.005], rgbaColor=[1, 0, 0, 0.4])
+# --- 2. Defining the Tray Areas ---
+# Red tray on the left, Blue tray on the right
+red_tray_pos = [0.6, -0.3, 0.63]
+blue_tray_pos = [0.6, 0.3, 0.63]
 
-# Define exact bin positions
-blue_bin_pos = [0.5, 0.35, 0.63]
-red_bin_pos = [0.5, -0.35, 0.63]
+def create_tray(pos, color):
+    viz = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.1, 0.1, 0.01], rgbaColor=color)
+    p.createMultiBody(baseVisualShapeIndex=viz, basePosition=pos)
 
-p.createMultiBody(baseVisualShapeIndex=blue_zone_viz, basePosition=blue_bin_pos)
-p.createMultiBody(baseVisualShapeIndex=red_zone_viz, basePosition=red_bin_pos)
+create_tray(red_tray_pos, [1, 0, 0, 0.5])  # Semi-transparent red
+create_tray(blue_tray_pos, [0, 0, 1, 0.5])  # Semi-transparent blue
 
-# Load Robot
+# Robot & Cubes
 robot_id = p.loadURDF("franka_panda/panda.urdf", useFixedBase=True)
-
-# Load and Color the Cubes
-cube_red = p.loadURDF("cube_small.urdf", [0.45, -0.1, 0.65])
+cube_red = p.loadURDF("cube_small.urdf", [0.5, -0.1, 0.65])
 p.changeVisualShape(cube_red, -1, rgbaColor=[1, 0, 0, 1])
-
-cube_blue = p.loadURDF("cube_small.urdf", [0.45, 0.1, 0.65])
+cube_blue = p.loadURDF("cube_small.urdf", [0.5, 0.1, 0.65])
 p.changeVisualShape(cube_blue, -1, rgbaColor=[0, 0, 1, 1])
 
-# --- 2. Global Variables for HRI Logic ---
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8)
+# --- 3. HRI & Gesture Setup ---
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
 cap = cv2.VideoCapture(0)
-cid = -1 # Constraint ID for picking up objects
-score = 0
-red_sorted = False
-blue_sorted = False
 
-def handle_grasping(gripper_pos, ee_pos, cubes):
-    """Snaps the cube to the gripper when pinched."""
-    global cid
-    if gripper_pos < 0.01 and cid == -1:
-        for cube in cubes:
-            cube_pos, _ = p.getBasePositionAndOrientation(cube)
-            dist = np.linalg.norm(np.array(ee_pos) - np.array(cube_pos))
-            if dist < 0.06:
-                # Create a fixed constraint between robot link 11 and the cube
-                cid = p.createConstraint(robot_id, 11, cube, -1, p.JOINT_FIXED, [0, 0, 0], [0, 0, 0], [0, 0, 0])
-                break
-    elif gripper_pos > 0.03 and cid != -1:
-        p.removeConstraint(cid)
-        cid = -1
+def get_gesture(results):
+    if not results.multi_hand_landmarks: return "NONE"
+    lms = results.multi_hand_landmarks[0].landmark
+    pinch = np.linalg.norm(np.array([lms[4].x - lms[8].x, lms[4].y - lms[8].y])) < 0.05
+    if pinch: return "PINCH"
+    # Open Palm check
+    if lms[8].y < lms[6].y and lms[12].y < lms[10].y: return "REJECT"
+    return "NONE"
 
-def check_scoring():
-    """Checks if cubes are inside their respective color zones."""
-    global score, red_sorted, blue_sorted
-    
-    r_pos, _ = p.getBasePositionAndOrientation(cube_red)
-    b_pos, _ = p.getBasePositionAndOrientation(cube_blue)
-    
-    # Check Red Cube in Red Bin
-    if not red_sorted and np.linalg.norm(np.array(r_pos[:2]) - np.array(red_bin_pos[:2])) < 0.1:
-        score += 1
-        red_sorted = True
-        
-    # Check Blue Cube in Blue Bin
-    if not blue_sorted and np.linalg.norm(np.array(b_pos[:2]) - np.array(blue_bin_pos[:2])) < 0.1:
-        score += 1
-        blue_sorted = True
+def move_to(pos, gripper_open=True):
+    joint_poses = p.calculateInverseKinematics(robot_id, 11, pos)
+    for i in range(7):
+        p.setJointMotorControl2(robot_id, i, p.POSITION_CONTROL, joint_poses[i])
+    g_val = 0.04 if gripper_open else 0.0
+    p.setJointMotorControl2(robot_id, 9, p.POSITION_CONTROL, g_val)
+    p.setJointMotorControl2(robot_id, 10, p.POSITION_CONTROL, g_val)
 
-# --- 3. Main Loop ---
+# --- 4. Logic Loop ---
+cubes = [cube_red, cube_blue]
+trays = [red_tray_pos, blue_tray_pos]
+current_idx = 0
+state = "HOVER"
+cid = -1
+
 try:
-    print("HRI Sorter System Running. Control the arm with your hand.")
-    while cap.isOpened() and p.isConnected():
+    while cap.isOpened():
         success, frame = cap.read()
-        if not success: continue
-        
         frame = cv2.flip(frame, 1)
-        h, w, _ = frame.shape
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(rgb_frame)
+        res = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        gesture = get_gesture(res)
 
-        status_msg = "REACH FOR A CUBE"
-        msg_color = (255, 255, 255)
+        target_cube = cubes[current_idx]
+        target_tray = trays[current_idx]
+        c_pos, _ = p.getBasePositionAndOrientation(target_cube)
 
-        if results.multi_hand_landmarks:
-            for hand_lms in results.multi_hand_landmarks:
-                idx = hand_lms.landmark[8]    # Index finger tip
-                thumb = hand_lms.landmark[4]  # Thumb tip
-                
-                # --- COORDINATE MAPPING ---
-                # Hand horizontal (x) -> Robot Y (left/right)
-                # Hand vertical (y) -> Robot X (forward/back)
-                # Pinch distance -> Gripper state
-                
-                target_x = 0.35 + (idx.y * 0.4) 
-                target_y = (idx.x - 0.5) * 1.0 
-                target_z = 0.68 + (0.32 * (1.0 - idx.y))
+        if state == "HOVER":
+            move_to([c_pos[0], c_pos[1], c_pos[2] + 0.12], gripper_open=True)
+            if gesture == "PINCH": state = "PICK"
+            if gesture == "REJECT": 
+                current_idx = (current_idx + 1) % 2
+                time.sleep(0.5)
 
-                # Inverse Kinematics for Link 11 (Hand center)
-                joint_poses = p.calculateInverseKinematics(robot_id, 11, [target_x, target_y, target_z])
-                for i in range(7):
-                    p.setJointMotorControl2(robot_id, i, p.POSITION_CONTROL, joint_poses[i])
+        elif state == "PICK":
+            move_to([c_pos[0], c_pos[1], c_pos[2]], gripper_open=False)
+            time.sleep(0.5)
+            cid = p.createConstraint(robot_id, 11, target_cube, -1, p.JOINT_FIXED, [0,0,0], [0,0,0], [0,0,0])
+            state = "PLACE"
 
-                # Gripper Position calculation
-                pinch_dist = np.linalg.norm(np.array([idx.x - thumb.x, idx.y - thumb.y]))
-                g_pos = 0.0 if pinch_dist < 0.05 else 0.04
-                p.setJointMotorControl2(robot_id, 9, p.POSITION_CONTROL, g_pos)
-                p.setJointMotorControl2(robot_id, 10, p.POSITION_CONTROL, g_pos)
+        elif state == "PLACE":
+            # Lift then move to tray
+            move_to([target_tray[0], target_tray[1], target_tray[2] + 0.1], gripper_open=False)
+            curr_ee = p.getLinkState(robot_id, 11)[0]
+            if np.linalg.norm(np.array(curr_ee[:2]) - np.array(target_tray[:2])) < 0.05:
+                p.removeConstraint(cid)
+                state = "SUCCESS"
 
-                # Logic for Grasping and Scoring
-                handle_grasping(g_pos, [target_x, target_y, target_z], [cube_red, cube_blue])
-                check_scoring()
+        elif state == "SUCCESS":
+            move_to([0.4, 0, 1.0], gripper_open=True) # Home position
+            time.sleep(1)
+            current_idx = (current_idx + 1) % 2
+            state = "HOVER"
 
-                # HRI Visual Guidance Logic
-                if cid != -1:
-                    status_msg = "MOVING TO TARGET BIN..."
-                    msg_color = (0, 255, 0)
-                elif pinch_dist < 0.05:
-                    status_msg = "PINCH DETECTED"
-                    msg_color = (255, 255, 0)
-
-                mp_draw.draw_landmarks(frame, hand_lms, mp_hands.HAND_CONNECTIONS)
-
-        # UI OVERLAY (Score and Status)
-        cv2.rectangle(frame, (0,0), (w, 65), (50, 50, 50), -1)
-        cv2.putText(frame, f"STATUS: {status_msg}", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, msg_color, 2)
-        cv2.putText(frame, f"SCORE: {score}/2", (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
-
+        cv2.putText(frame, f"GOAL: {'RED' if current_idx==0 else 'BLUE'} | GESTURE: {gesture}", (10, 50), 1, 1.5, (0,255,0), 2)
+        cv2.imshow("HRI Sorting", frame)
         p.stepSimulation()
-        cv2.imshow("RBE 526: HRI Sorting System", frame)
-        
         if cv2.waitKey(1) & 0xFF == ord('q'): break
-
 finally:
     cap.release()
     cv2.destroyAllWindows()
