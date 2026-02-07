@@ -3,107 +3,122 @@ import pybullet_data
 import cv2
 import numpy as np
 import time
+import random
+
+# --- DIRECT IMPORTS ---
 import mediapipe as mp
+from mediapipe.python.solutions import hands as mp_hands
+from mediapipe.python.solutions import drawing_utils as mp_draw
 
 # --- 1. Simulation Setup ---
 p.connect(p.GUI)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
 p.setGravity(0, 0, -9.81)
-p.resetDebugVisualizerCamera(1.5, 45, -30, [0.5, 0, 0.5])
+p.resetDebugVisualizerCamera(cameraDistance=1.5, cameraYaw=50, cameraPitch=-35, cameraTargetPosition=[0.5, 0, 0.6])
 
 p.loadURDF("plane.urdf")
-p.loadURDF("table/table.urdf", [0.5, 0, 0])
+table_id = p.loadURDF("table/table.urdf", [0.5, 0, 0], [0, 0, 0, 1])
+robot_id = p.loadURDF("franka_panda/panda.urdf", [0, 0, 0.62], useFixedBase=True)
 
-# --- 2. Defining the Tray Areas ---
-# Red tray on the left, Blue tray on the right
-red_tray_pos = [0.6, -0.3, 0.63]
-blue_tray_pos = [0.6, 0.3, 0.63]
+# Trays (Increased height slightly to act as a container)
+blue_tray_pos = [0.5, 0.35, 0.64]
+red_tray_pos = [0.5, -0.35, 0.64]
+tray_viz_b = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.12, 0.12, 0.02], rgbaColor=[0, 0, 1, 0.6])
+tray_viz_r = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.12, 0.12, 0.02], rgbaColor=[1, 0, 0, 0.6])
+p.createMultiBody(baseVisualShapeIndex=tray_viz_b, basePosition=blue_tray_pos)
+p.createMultiBody(baseVisualShapeIndex=tray_viz_r, basePosition=red_tray_pos)
 
-def create_tray(pos, color):
-    viz = p.createVisualShape(p.GEOM_BOX, halfExtents=[0.1, 0.1, 0.01], rgbaColor=color)
-    p.createMultiBody(baseVisualShapeIndex=viz, basePosition=pos)
+# --- 2. Scatter Mixed Cubes ---
+cubes = []
+for i in range(8):
+    # Narrower scattering range to keep them away from the tray edges
+    pos = [random.uniform(0.45, 0.6), random.uniform(-0.15, 0.15), 0.7]
+    c_id = p.loadURDF("cube_small.urdf", pos)
+    color = [1, 0, 0, 1] if random.random() > 0.5 else [0, 0, 1, 1]
+    p.changeVisualShape(c_id, -1, rgbaColor=color)
+    cubes.append({'id': c_id, 'color': 'red' if color[0]==1 else 'blue', 'sorted': False})
 
-create_tray(red_tray_pos, [1, 0, 0, 0.5])  # Semi-transparent red
-create_tray(blue_tray_pos, [0, 0, 1, 0.5])  # Semi-transparent blue
-
-# Robot & Cubes
-robot_id = p.loadURDF("franka_panda/panda.urdf", useFixedBase=True)
-cube_red = p.loadURDF("cube_small.urdf", [0.5, -0.1, 0.65])
-p.changeVisualShape(cube_red, -1, rgbaColor=[1, 0, 0, 1])
-cube_blue = p.loadURDF("cube_small.urdf", [0.5, 0.1, 0.65])
-p.changeVisualShape(cube_blue, -1, rgbaColor=[0, 0, 1, 1])
-
-# --- 3. HRI & Gesture Setup ---
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+# --- 3. Control Variables ---
+hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8)
 cap = cv2.VideoCapture(0)
-
-def get_gesture(results):
-    if not results.multi_hand_landmarks: return "NONE"
-    lms = results.multi_hand_landmarks[0].landmark
-    pinch = np.linalg.norm(np.array([lms[4].x - lms[8].x, lms[4].y - lms[8].y])) < 0.05
-    if pinch: return "PINCH"
-    # Open Palm check
-    if lms[8].y < lms[6].y and lms[12].y < lms[10].y: return "REJECT"
-    return "NONE"
-
-def move_to(pos, gripper_open=True):
-    joint_poses = p.calculateInverseKinematics(robot_id, 11, pos)
-    for i in range(7):
-        p.setJointMotorControl2(robot_id, i, p.POSITION_CONTROL, joint_poses[i])
-    g_val = 0.04 if gripper_open else 0.0
-    p.setJointMotorControl2(robot_id, 9, p.POSITION_CONTROL, g_val)
-    p.setJointMotorControl2(robot_id, 10, p.POSITION_CONTROL, g_val)
-
-# --- 4. Logic Loop ---
-cubes = [cube_red, cube_blue]
-trays = [red_tray_pos, blue_tray_pos]
 current_idx = 0
-state = "HOVER"
+state = "APPROACHING" # APPROACHING -> DESCENDING -> PICKING -> LIFTING -> MOVING -> DROPPING
 cid = -1
+SAFE_HEIGHT = 0.9  # Height to move across the table without hitting cubes
+APPROACH_HEIGHT = 0.75 # Height just above the cube
 
+def is_thumbs_up(hand_lms):
+    thumb_tip = hand_lms.landmark[4].y
+    index_tip = hand_lms.landmark[8].y
+    return thumb_tip < index_tip - 0.1
+
+# --- 4. Main Loop ---
 try:
-    while cap.isOpened():
-        success, frame = cap.read()
+    while cap.isOpened() and p.isConnected():
+        ret, frame = cap.read()
         frame = cv2.flip(frame, 1)
         res = hands.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-        gesture = get_gesture(res)
+        
+        approved = False
+        if res.multi_hand_landmarks:
+            for lms in res.multi_hand_landmarks:
+                if is_thumbs_up(lms): approved = True
+                mp_draw.draw_landmarks(frame, lms, mp_hands.HAND_CONNECTIONS)
 
-        target_cube = cubes[current_idx]
-        target_tray = trays[current_idx]
-        c_pos, _ = p.getBasePositionAndOrientation(target_cube)
+        if current_idx < len(cubes):
+            cube = cubes[current_idx]
+            c_pos, _ = p.getBasePositionAndOrientation(cube['id'])
+            ee_pos = p.getLinkState(robot_id, 11)[0]
+            
+            # --- PRECISE STATE MACHINE ---
+            if state == "APPROACHING":
+                target = [c_pos[0], c_pos[1], SAFE_HEIGHT]
+                status = "STATUS: Approaching Cube. Give THUMBS UP!"
+                if np.linalg.norm(np.array(ee_pos[:2]) - np.array(c_pos[:2])) < 0.02:
+                    if approved: state = "DESCENDING"
+            
+            elif state == "DESCENDING":
+                target = [c_pos[0], c_pos[1], 0.685] # Precise grab height
+                status = "STATUS: Descending carefully..."
+                if abs(ee_pos[2] - 0.685) < 0.01:
+                    cid = p.createConstraint(robot_id, 11, cube['id'], -1, p.JOINT_FIXED, [0,0,0], [0,0,0], [0,0,0])
+                    state = "LIFTING"
 
-        if state == "HOVER":
-            move_to([c_pos[0], c_pos[1], c_pos[2] + 0.12], gripper_open=True)
-            if gesture == "PINCH": state = "PICK"
-            if gesture == "REJECT": 
-                current_idx = (current_idx + 1) % 2
-                time.sleep(0.5)
+            elif state == "LIFTING":
+                target = [ee_pos[0], ee_pos[1], SAFE_HEIGHT]
+                status = "STATUS: Lifting cube safely."
+                if ee_pos[2] > SAFE_HEIGHT - 0.05: state = "MOVING"
 
-        elif state == "PICK":
-            move_to([c_pos[0], c_pos[1], c_pos[2]], gripper_open=False)
-            time.sleep(0.5)
-            cid = p.createConstraint(robot_id, 11, target_cube, -1, p.JOINT_FIXED, [0,0,0], [0,0,0], [0,0,0])
-            state = "PLACE"
+            elif state == "MOVING":
+                tray_pos = blue_tray_pos if cube['color'] == 'blue' else red_tray_pos
+                target = [tray_pos[0], tray_pos[1], SAFE_HEIGHT]
+                status = f"STATUS: Transporting to {cube['color']} tray"
+                if np.linalg.norm(np.array(ee_pos[:2]) - np.array(tray_pos[:2])) < 0.02:
+                    state = "DROPPING"
 
-        elif state == "PLACE":
-            # Lift then move to tray
-            move_to([target_tray[0], target_tray[1], target_tray[2] + 0.1], gripper_open=False)
-            curr_ee = p.getLinkState(robot_id, 11)[0]
-            if np.linalg.norm(np.array(curr_ee[:2]) - np.array(target_tray[:2])) < 0.05:
-                p.removeConstraint(cid)
-                state = "SUCCESS"
+            elif state == "DROPPING":
+                tray_pos = blue_tray_pos if cube['color'] == 'blue' else red_tray_pos
+                target = [tray_pos[0], tray_pos[1], 0.72] # Lower into tray before release
+                status = "STATUS: Soft release..."
+                if ee_pos[2] < 0.73:
+                    p.removeConstraint(cid)
+                    time.sleep(0.2) # Wait for settle
+                    cube['sorted'] = True
+                    current_idx += 1
+                    state = "APPROACHING"
 
-        elif state == "SUCCESS":
-            move_to([0.4, 0, 1.0], gripper_open=True) # Home position
-            time.sleep(1)
-            current_idx = (current_idx + 1) % 2
-            state = "HOVER"
+            # Inverse Kinematics with limited max velocity for smoothness
+            joint_poses = p.calculateInverseKinematics(robot_id, 11, target)
+            for i in range(7):
+                p.setJointMotorControl2(robot_id, i, p.POSITION_CONTROL, joint_poses[i], force=200, maxVelocity=1.5)
+        else:
+            status = "STATUS: Sorting Complete!"
 
-        cv2.putText(frame, f"GOAL: {'RED' if current_idx==0 else 'BLUE'} | GESTURE: {gesture}", (10, 50), 1, 1.5, (0,255,0), 2)
-        cv2.imshow("HRI Sorting", frame)
+        cv2.putText(frame, status, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.imshow("WPI RBE 526: Precise Sorter", frame)
         p.stepSimulation()
         if cv2.waitKey(1) & 0xFF == ord('q'): break
+
 finally:
     cap.release()
     cv2.destroyAllWindows()
