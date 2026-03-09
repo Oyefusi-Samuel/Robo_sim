@@ -1,1 +1,1 @@
-pip install pybullet mediapipe opencv-python numpy
+pip install pybullet mediapipe opencv-python numpy scikit-learn
