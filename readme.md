@@ -35,13 +35,14 @@ The system uses the webcam to create a feedback loop.
 * **Trays:** Blue (Left) and Red (Right) trays are modeled as 3D containers with specific coordinate bounds for scoring.
 * **Cubes:** 8 cubes are spawned with randomized positions and colors to test the robot's adaptability.
 
----
+### 3. Gaze Tracking
+If the gaze estimate is inaccurate, tune the horizontal_scale_factor and vertical_scale_factor variables in the gaze_tracking file. Also ensure the screen_width and screen_height variables (in pixels) match your system.
 
 ## 💻 Installation & Usage
 
 ### Prerequisites
 Ensure you have Python installed with the following dependencies:
 ```bash
-pip install pybullet opencv-python mediapipe numpy
+pip install pybullet opencv-python mediapipe numpy scikit-learn
 
 

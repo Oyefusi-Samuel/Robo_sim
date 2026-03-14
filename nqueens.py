@@ -86,6 +86,7 @@ def create_piece(position, height, radius, color):
 
     return piece
 
+<<<<<<< HEAD
 # convert board coordinates to world, given board position
 def board_to_world(row, col, board_pos, sqr_size=0.06, board_size=8):
 
@@ -211,6 +212,8 @@ def place_piece(robot, target_pos, gripper:Gripper):
     inv_kinematics(robot, above)
     step_sim(50)
 
+=======
+>>>>>>> f0338215151d7e29aa00b2145aed537ae1081295
 ## Physics Environment init (plane + gravity)
 physicsClient = p.connect(p.GUI)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -218,6 +221,7 @@ p.setGravity(0,0,-9.81)
 plane_id = p.loadURDF("plane.urdf")
 
 ## Load Table
+<<<<<<< HEAD
 tabel_pos = [0, -0.5, 0.15]
 table = create_table(tabel_pos)
 
@@ -235,6 +239,17 @@ for row in range(4):
 for row in range(4):
     pos = board_to_world(row+2, 7, board_pos)
     queens.append(create_piece(pos, 0.08, 0.025, [0.25, 0, 1, 1]))
+=======
+tabel_pos = [0, -0.5, 0.35]
+table = create_table(tabel_pos)
+
+# Load Board
+chess_board = create_chess_board([0,-0.5,0.37])
+
+# Load Queens
+a_queen = create_piece([0, -0.5, 0.4], 0.08, 0.025, [0.25,0,1,1])
+
+>>>>>>> f0338215151d7e29aa00b2145aed537ae1081295
 
 ## Load Robot into World
 # Note:
@@ -242,6 +257,7 @@ for row in range(4):
 # Fingers -------> 9 and 10
 # Arm -----------> 0 to 6
 boxId = p.loadURDF("franka_panda/panda.urdf", useFixedBase=True)
+<<<<<<< HEAD
 p.setJointMotorControl2(boxId, 9, p.POSITION_CONTROL, 0.04)
 p.setJointMotorControl2(boxId, 10, p.POSITION_CONTROL, 0.04)
 gripper = Gripper(boxId, 11)
@@ -274,4 +290,14 @@ targets = [board_to_world(0,4,board_pos),
 for i in range(len(start)):
     pick_piece(boxId, start[i], gripper=gripper, peiceIds=queens)
     place_piece(boxId, targets[i], gripper=gripper)
+=======
+t = 0
+while p.isConnected:
+    p.stepSimulation()
+    time.sleep(1./240.)
+    print(t)
+    t += 1
+cubePos, cubeOrn = p.getBasePositionAndOrientation(boxId)
+print(cubePos,cubeOrn)
+>>>>>>> f0338215151d7e29aa00b2145aed537ae1081295
 p.disconnect()
