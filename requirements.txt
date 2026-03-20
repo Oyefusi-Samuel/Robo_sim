@@ -1,1 +1,31 @@
-pip install pybullet mediapipe opencv-python numpy scikit-learn
+#pip install pybullet mediapipe opencv-python numpy scikit-learn
+absl-py==2.3.1
+attrs==26.1.0
+cffi==2.0.0
+cmocean==2.0
+contourpy==1.3.0
+cycler==0.12.1
+flatbuffers==25.12.19
+fonttools==4.60.2
+importlib_resources==6.5.2
+joblib==1.5.3
+kiwisolver==1.4.7
+matplotlib==3.9.4
+mediapipe==0.10.9
+numpy==2.0.2
+opencv-contrib-python==4.13.0.92
+opencv-python==4.13.0.92
+packaging==26.0
+pillow==11.3.0
+protobuf==3.20.0
+pybullet==3.2.7
+pycparser==2.23
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+scikit-learn==1.6.1
+scipy==1.13.1
+six==1.17.0
+ski==0.1.12
+sounddevice==0.5.5
+threadpoolctl==3.6.0
+zipp==3.23.0
