@@ -10,22 +10,41 @@ from sklearn.linear_model import LinearRegression
 # coordinate measurements are in millimeters
 FACE_3D_COORDINATES = np.array([
     [0.0, 0.0, 0.0], # nose tip is the origin
-    [0.0, -95.0, -20.0], # chin
-    [50.0, 40.0, -50.0], # left eye outer corner
-    [-52.5, 45.0, -50.0], # right eye outer corner
-    [25.0, -42.5, -25.0], # left mouth corner
-    [-25.0, -40.0, -37.5], # right mouth corner
+    [0.0, -330.0, -65.0], # chin
+    [-225.0, 170.0, -135.0], # left eye outer corner
+    [225.0, 170.0, -135.0], # right eye outer corner
+    [-150.0, -150.0, -125.0], # left mouth corner
+    [150.0, -150.0, -125.0], # right mouth corner
 ], dtype=np.float64)
 
 # mediapipe facemesh assigns the above face features to these indices
 FACEMESH_INDICES = [1, 152, 263, 33, 287, 57]
 
 # Measuring my eye center provide an origin point for projecting the gaze vector
-RIGHT_EYE_CENTER_3D = np.array([-30.0, 40.0, -35.0], dtype=np.float64)
-LEFT_EYE_CENTER_3D = np.array([30.0, 40.0, -35.0], dtype=np.float64)
+RIGHT_EYE_CENTER_3D = np.array([-65.0, 170.0, -75.0], dtype=np.float64)
+LEFT_EYE_CENTER_3D = np.array([-65.0, 170.0, -75.0], dtype=np.float64)
 
 # This variable lets us compute how far the iris has moved fom the center of the eye
-EYE_RADIUS = 15.0
+EYE_RADIUS = 12.0
+
+# FACE_3D_COORDINATES = np.array([
+#     [0.0, 0.0, 0.0], # nose tip is the origin
+#     [0.0, -95.0, -20.0], # chin
+#     [50.0, 40.0, -50.0], # left eye outer corner
+#     [-52.5, 45.0, -50.0], # right eye outer corner
+#     [25.0, -42.5, -25.0], # left mouth corner
+#     [-25.0, -40.0, -37.5], # right mouth corner
+# ], dtype=np.float64)
+
+# # mediapipe facemesh assigns the above face features to these indices
+# FACEMESH_INDICES = [1, 152, 263, 33, 287, 57]
+
+# # Measuring my eye center provide an origin point for projecting the gaze vector
+# RIGHT_EYE_CENTER_3D = np.array([-30.0, 40.0, -35.0], dtype=np.float64)
+# LEFT_EYE_CENTER_3D = np.array([30.0, 40.0, -35.0], dtype=np.float64)
+
+# # This variable lets us compute how far the iris has moved fom the center of the eye
+# EYE_RADIUS = 15.0
 
 def estimate_head_pose(landmarks, frame_width, frame_height):
     """
@@ -38,7 +57,7 @@ def estimate_head_pose(landmarks, frame_width, frame_height):
         frame_width: camera frame width in pixels
         frame_height: camera frame height in pixels
     returns:
-        roation_vector: represents the head's orientation where the vector direction is the axis of rotation
+        rotation_vector: represents the head's orientation where the vector direction is the axis of rotation
                         and the magnitude is the angle of rotation in radians
         translation_vector: position of the head relative to the camera
         camera_matrix: matrix representing intrinsic properties of the camera like focal length and optical center
@@ -46,7 +65,7 @@ def estimate_head_pose(landmarks, frame_width, frame_height):
 
     # mediapipe represents each landmark as a ratio from 0 to 1
     # so we have to scale this by the frame dimensions to get the pixel coordinates
-    face_points_2d = np.array([[landmarks.landmark[index].x * frame_width, landmarks.landmark[index].y * frame_height]
+    face_points_2d = np.array([[landmarks[index].x * frame_width, landmarks[index].y * frame_height]
                           for index in FACEMESH_INDICES], dtype=np.float64)
     
     # approximation based on the webcam's field of view
@@ -74,7 +93,10 @@ def estimate_head_pose(landmarks, frame_width, frame_height):
             flags=cv2.SOLVEPNP_ITERATIVE 
     )
 
-    return rotation_vector, translation_vector, camera_matrix
+    if success_boolean:
+        return rotation_vector, translation_vector, camera_matrix
+    else:
+        return None, None, None
 
 def estimate_iris_direction(landmarks, frame_width, frame_height, iris_center_idx, eye_inner_idx, eye_outer_idx, eye_top_idx, eye_bottom_idx, eye_center_3D):
     """
@@ -83,16 +105,16 @@ def estimate_iris_direction(landmarks, frame_width, frame_height, iris_center_id
     """
     
     # mediapipe facemesh iris position
-    iris = landmarks.landmark[iris_center_idx]
+    iris = landmarks[iris_center_idx]
 
     # convert to 2D pixel position
     iris_2d = np.array([iris.x * frame_width, iris.y * frame_height])
 
     # Find relevant eye landmark positions
-    inner_eye = landmarks.landmark[eye_inner_idx]
-    outer_eye = landmarks.landmark[eye_outer_idx]
-    top_eye = landmarks.landmark[eye_top_idx]
-    bottom_eye = landmarks.landmark[eye_bottom_idx]
+    inner_eye = landmarks[eye_inner_idx]
+    outer_eye = landmarks[eye_outer_idx]
+    top_eye = landmarks[eye_top_idx]
+    bottom_eye = landmarks[eye_bottom_idx]
 
     eye_left_x = min(inner_eye.x, outer_eye.x) * frame_width
     eye_right_x = max(inner_eye.x, outer_eye.x) * frame_width
@@ -120,8 +142,8 @@ def estimate_iris_direction(landmarks, frame_width, frame_height, iris_center_id
 
     # convert 2D iris offset to 3D gaze direction
     gaze_direction = np.array([
-        iris_offset_x * EYE_RADIUS,
-        iris_offset_y * EYE_RADIUS,
+        - iris_offset_x * EYE_RADIUS,
+        - iris_offset_y * EYE_RADIUS,
         -EYE_RADIUS
     ], dtype=np.float64)
 
@@ -147,62 +169,84 @@ def gaze_to_screen_point(landmarks, frame_width, frame_height,
     rotation_vector, translation_vector, camera_matrix = estimate_head_pose(landmarks,
                                                                             frame_width,
                                                                             frame_height)
+    if rotation_vector is not None:
+        # rotation matrix from rotation vector
+        rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+
+        # estimate the gaze for right and left eyes
+        right_gaze = estimate_iris_direction(
+            landmarks, frame_width, frame_height,
+            iris_center_idx=468, eye_inner_idx=133,
+            eye_outer_idx=33,
+            eye_top_idx=159, eye_bottom_idx=145,
+            eye_center_3D=RIGHT_EYE_CENTER_3D
+        )
+
+        left_gaze = estimate_iris_direction(
+            landmarks, frame_width, frame_height,
+            iris_center_idx=473, eye_inner_idx=362,
+            eye_outer_idx=263,
+            eye_top_idx=386, eye_bottom_idx=374,
+            eye_center_3D=LEFT_EYE_CENTER_3D
+        )
+
+        # average and normalize gaze to get a better estimate
+        average_gaze_local = (right_gaze + left_gaze) / 2
+        average_gaze_local /= np.linalg.norm(average_gaze_local)
+
+        # convert gaze from head frame to camera frame
+        gaze_world = rotation_matrix @ average_gaze_local
+
+        # if gaze is parallel to the screen
+        # there can be a risk of division by zero
+        if abs(gaze_world[2]) < 1e-6:
+            # default to screen center
+            return screen_width_pixels / 2, screen_height_pixels / 2
+        
+        # horizontal and vertical gaze ratios
+        # positive gaze horizontal ratio means user is looking right on the screen
+        # positive vertical ratio means the user is looking up
+        gaze_horizontal_ratio = (gaze_world[0] / gaze_world[2])
+        gaze_vertical_ratio = (gaze_world[1] / gaze_world[2])
+
+        # account for how sensitive the screen gaze
+        # location estimate is to the gaze angle
+        # these parameters can be modified to ensure
+        # better gaze tracking performance
+        horizontal_scale_factor = 1.0
+        vertical_scale_factor = 1.0
+
+        h_scale = 4.0
+        v_scale = 4.0
+
+        screen_x = (0.5 + gaze_horizontal_ratio*h_scale)*screen_width_pixels
+        screen_y = (0.5 + gaze_vertical_ratio*v_scale)*screen_height_pixels
+
+        # gaze_horizontal_normalized = gaze_world[0] / np.linalg.norm(gaze_world[0])
+        # gaze_vertical_normalized = gaze_world[1] / np.linalg.norm(gaze_world[1])
+
+        # right_eye = landmarks.landmark[468]
+        # left_eye = landmarks.landmark[473]
+        # eyes_center_x = int((right_eye.x+left_eye.x)/2*frame_width)
+        # eyes_center_y = int((right_eye.y+left_eye.y)/2*frame_height)
+        # gaze_vector_x = int((eyes_center_x+gaze_world[0]*horizontal_scale_factor))
+        # gaze_vector_y = int((eyes_center_y+gaze_world[1]*vertical_scale_factor))
+
+        # horizontal_factor = 2.0
+        # vertical_factor = 2.0
+        # # estimate the x and y coordinates of the gaze
+        # screen_x = (0.5+gaze_vector_x)*horizontal_factor
+        # screen_y = (0.5+gaze_vector_y)*vertical_factor
+
+        # # # ensure the boundary of the screen is the limit of the x and y pixel coordinates
+        # # screen_x = np.clip(screen_x, 0, screen_width_pixels)
+        # # screen_y = np.clip(screen_y, 0, screen_height_pixels)
+
+        
+        return float(screen_x), float(screen_y), right_gaze, left_gaze, average_gaze_local, gaze_world, rotation_matrix
     
-    # rotation matrix from rotation vector
-    rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
-
-    # estimate the gaze for right and left eyes
-    right_gaze = estimate_iris_direction(
-        landmarks, frame_width, frame_height,
-        iris_center_idx=468, eye_inner_idx=133,
-        eye_outer_idx=33,
-        eye_top_idx=159, eye_bottom_idx=145,
-        eye_center_3D=RIGHT_EYE_CENTER_3D
-    )
-
-    left_gaze = estimate_iris_direction(
-        landmarks, frame_width, frame_height,
-        iris_center_idx=473, eye_inner_idx=362,
-        eye_outer_idx=263,
-        eye_top_idx=386, eye_bottom_idx=374,
-        eye_center_3D=LEFT_EYE_CENTER_3D
-    )
-
-    # average and normalize gaze to get a better estimate
-    average_gaze_local = (right_gaze + left_gaze) / 2
-    average_gaze_local /= np.linalg.norm(average_gaze_local)
-
-    # convert gaze from head frame to camera frame
-    gaze_world = rotation_matrix @ average_gaze_local
-
-    # if gaze is parallel to the screen
-    # there can be a risk of division by zero
-    if abs(gaze_world[2]) < 1e-6:
-        # default to screen center
-        return screen_width_pixels / 2, screen_height_pixels / 2
-    
-    # horizontal and vertical gaze ratios
-    # positive gaze horizontal ratio means user is looking right on the screen
-    # positive vertical ratio means the user is looking up
-    gaze_horizontal_ratio = gaze_world[0] / gaze_world[2]
-    gaze_vertical_ratio = gaze_world[1] / gaze_world[2]
-
-    # account for how sensitive the screen gaze
-    # location estimate is to the gaze angle
-    # these parameters can be modified to ensure
-    # better gaze tracking performance
-    horizontal_scale_factor = 2.0
-    vertical_scale_factor = 2.0
-
-    # estimate the x and y coordinates of the gaze
-    screen_x = (0.5 + gaze_horizontal_ratio * horizontal_scale_factor) * screen_width_pixels
-    screen_y = (0.5 + gaze_vertical_ratio * vertical_scale_factor) * screen_height_pixels
-
-    # ensure the boundary of the screen is the limit of the x and y pixel coordinates
-    screen_x = np.clip(screen_x, 0, screen_width_pixels)
-    screen_y = np.clip(screen_y, 0, screen_height_pixels)
-
-    return float(screen_x), float(screen_y)
+    else:
+        return 0.0, 0.0
 
 class GazeCalibration:
     """
@@ -223,7 +267,7 @@ class GazeCalibration:
         self.model_x = None
         self.model_y = None
 
-    def add_sample(self, collected_point_x, collected_point_y,
+    def add_sample(self, collected_point_x, collected_point_y, gaze_world_x, gaze_world_y,
                    true_point_x, true_point_y):
         # record collected points with their corresponding true screen locations
         self.collected_points.append([collected_point_x,collected_point_y])
@@ -242,7 +286,7 @@ class GazeCalibration:
         self.model_y = LinearRegression().fit(self.collected_points,
                             [point[1] for point in self.true_points])
 
-    def transform(self, collected_point_x, collected_point_y):
+    def transform(self, collected_point_x, collected_point_y, gaze_world_x, gaze_world_y):
         """
         Return the corrected x and y coordinates using
         the fitted linear regression model after calibration is finished.
