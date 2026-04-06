@@ -262,6 +262,13 @@ def get_safe(row, placed):
             safe.append(col)
     return safe
 
+def is_selectable(r, c, placed):
+    if r in placed:
+        return False
+    if c in placed.values():
+        return False
+    return True
+
 def _deadlock(row, col, placed):
     trial = dict(placed); trial[row] = col
     return any(not get_safe(fr, trial) for fr in range(row+1, BOARD_N))
@@ -498,27 +505,28 @@ try:
 
         if confirm:
             r, c = cursor_row, cursor_col
-            if r in placed:
-                status = "Row already occupied"
-            elif not is_safe(r, c, placed):
-                status = "Illegal move"
+            if r in placed and placed[r] == c:
+                status = "Square already occupied"
+                #status = "Row already occupied"
+            #elif not is_safe(r, c, placed):
+            #    status = "Illegal move"
             else:
                 hide_ghost(ghost)
-                clear_row(r)
+                clear_all_hl()
                 flash_cell(r, c)
 
                 src_pos = q_pos[r]
-            dst_pos = sq_world(r, c)
-            print(f"\n\n  ► Row {r} → Col {c}")
+                dst_pos = sq_world(r, c)
+                print(f"\n\n  ► Row {r} → Col {c}")
 
-            cid = pick(robot, queens[r], src_pos)
-            place(robot, queens[r], cid, dst_pos)
+                cid = pick(robot, queens[r], src_pos)
+                place(robot, queens[r], cid, dst_pos)
 
-            q_pos[r] = c
-            placed[r] = c#dst_pos
-            add_dot(r, c)
-            status = f"{len(placed)}/8 queens placed"
-            print(f"    ✓  {len(placed)}/8")
+                q_pos[r] = dst_pos
+                placed[r] = c#dst_pos
+                add_dot(r, c)
+                status = f"{len(placed)}/8 queens placed"
+                print(f"    ✓  {len(placed)}/8")
 
         p.stepSimulation()
         time.sleep(1/240)
