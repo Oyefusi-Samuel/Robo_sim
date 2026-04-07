@@ -1,11 +1,9 @@
 import cv2
-import numpy as np
 import time
 import random
 import gaze_tracking
 
 # --- DIRECT IMPORTS FOR COMPUTER VISION ---
-import mediapipe as mp
 from mediapipe.python.solutions import face_mesh as eye_tracking
 
 # Initialize FaceMesh for gaze tracking
@@ -58,14 +56,15 @@ try:
                 cv2.circle(frame, (screen_x, screen_y), 5, (0, 255, 0), -1)
                 
                 # print gaze vector on the screen
-                average_gaze = f"Gaze: [{gaze_world[0]:+.3f}, {gaze_world[1]:+.3f}, {gaze_world[2]:+.3f}]"
-                right_eye = landmarks.landmark[468]
-                left_eye = landmarks.landmark[473]
-                eyes_center_x = int((right_eye.x+left_eye.x)/2*width)
-                eyes_center_y = int((right_eye.y+left_eye.y)/2*height)
-                end_vector_x = int(eyes_center_x+gaze_world[0]*300)
-                end_vector_y = int(eyes_center_y+gaze_world[1]*300)
-                cv2.arrowedLine(frame, (eyes_center_x,eyes_center_y), (end_vector_x,end_vector_y), (0, 255, 0), 2, tipLength=0.3)
+                if gaze_world is not None:
+                    average_gaze = f"Gaze: [{gaze_world[0]:+.3f}, {gaze_world[1]:+.3f}, {gaze_world[2]:+.3f}]"
+                    right_eye = landmarks.landmark[468]
+                    left_eye = landmarks.landmark[473]
+                    eyes_center_x = int((right_eye.x+left_eye.x)/2*width)
+                    eyes_center_y = int((right_eye.y+left_eye.y)/2*height)
+                    end_vector_x = int(eyes_center_x+gaze_world[0]*300)
+                    end_vector_y = int(eyes_center_y+gaze_world[1]*300)
+                    cv2.arrowedLine(frame, (eyes_center_x,eyes_center_y), (end_vector_x,end_vector_y), (0, 255, 0), 2, tipLength=0.3)
                 
                 frame = cv2.flip(frame, 1)  # Mirror the camera 
 

@@ -206,18 +206,15 @@ def gaze_to_screen_point(landmarks, frame_width, frame_height,
         # horizontal and vertical gaze ratios
         # positive gaze horizontal ratio means user is looking right on the screen
         # positive vertical ratio means the user is looking up
-        gaze_horizontal_ratio = (gaze_world[0] / gaze_world[2])
-        gaze_vertical_ratio = (gaze_world[1] / gaze_world[2])
+        gaze_horizontal_ratio = ((3*gaze_world[0]) / gaze_world[2])
+        gaze_vertical_ratio = ((3*gaze_world[1]) / gaze_world[2])
 
         # account for how sensitive the screen gaze
         # location estimate is to the gaze angle
         # these parameters can be modified to ensure
         # better gaze tracking performance
-        horizontal_scale_factor = 1.0
-        vertical_scale_factor = 1.0
-
-        h_scale = 4.0
-        v_scale = 4.0
+        h_scale = 1.0
+        v_scale = 1.0
 
         screen_x = (0.5 + gaze_horizontal_ratio*h_scale)*screen_width_pixels
         screen_y = (0.5 + gaze_vertical_ratio*v_scale)*screen_height_pixels
@@ -246,55 +243,8 @@ def gaze_to_screen_point(landmarks, frame_width, frame_height,
         return float(screen_x), float(screen_y), right_gaze, left_gaze, average_gaze_local, gaze_world, rotation_matrix
     
     else:
-        return 0.0, 0.0
+        return 0.5*frame_width, 0.5*frame_height, None     
 
-class GazeCalibration:
-    """
-    Calibrate the gaze vector by learning a mapping from
-    gaze estimates to true known points on the screen.
-    This method accounts for errors in the camera
-    focal length approximation, camera optical center,
-    3D face measurements, and all other variables with
-    potential estimation error.
-    """
-    def __init__(self):
-        # what is the gaze estimation for a given point on the screen
-        self.collected_points = []
-        # screen position of calibration point
-        self.true_points = []
-
-        # these are added with the fit method
-        self.model_x = None
-        self.model_y = None
-
-    def add_sample(self, collected_point_x, collected_point_y, gaze_world_x, gaze_world_y,
-                   true_point_x, true_point_y):
-        # record collected points with their corresponding true screen locations
-        self.collected_points.append([collected_point_x,collected_point_y])
-        self.true_points.append([true_point_x, true_point_y])
-
-    def fit(self):
-        """
-        Correct for translation, scaling, and rotation of the gaze estimates.
-        The accumulated errors of gaze estimation could be caused by a slightly tilted head
-        during gaze tracking or errors in estimating the intrinsic camera paramaters.
-        The linear regression model accounts for these errors
-        when comparing to the true known points during calibration.
-        """
-        self.model_x = LinearRegression().fit(self.collected_points,
-                            [point[0] for point in self.true_points])
-        self.model_y = LinearRegression().fit(self.collected_points,
-                            [point[1] for point in self.true_points])
-
-    def transform(self, collected_point_x, collected_point_y, gaze_world_x, gaze_world_y):
-        """
-        Return the corrected x and y coordinates using
-        the fitted linear regression model after calibration is finished.
-        """
-        input_point = np.array([[collected_point_x, collected_point_y]])
-        return float(self.model_x.predict(input_point)[0]), \
-                float(self.model_y.predict(input_point)[0])
-    
 class GazeSmoothTracking:
     """
     The calibrated gaze to screen position can be jumpy as the eye moves quickly.
