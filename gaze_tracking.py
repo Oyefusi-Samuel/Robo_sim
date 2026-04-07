@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-from sklearn.linear_model import LinearRegression
 
 # Use my face coordinates for computing the transformation
 # of a 3D face onto the 2D facemesh landmarks from mediapipe
@@ -10,41 +9,22 @@ from sklearn.linear_model import LinearRegression
 # coordinate measurements are in millimeters
 FACE_3D_COORDINATES = np.array([
     [0.0, 0.0, 0.0], # nose tip is the origin
-    [0.0, -330.0, -65.0], # chin
-    [-225.0, 170.0, -135.0], # left eye outer corner
-    [225.0, 170.0, -135.0], # right eye outer corner
-    [-150.0, -150.0, -125.0], # left mouth corner
-    [150.0, -150.0, -125.0], # right mouth corner
+    [0.0, -95.0, -20.0], # chin
+    [50.0, 40.0, -50.0], # left eye outer corner
+    [-52.5, 45.0, -50.0], # right eye outer corner
+    [25.0, -42.5, -25.0], # left mouth corner
+    [-25.0, -40.0, -37.5], # right mouth corner
 ], dtype=np.float64)
 
 # mediapipe facemesh assigns the above face features to these indices
 FACEMESH_INDICES = [1, 152, 263, 33, 287, 57]
 
-# Measuring my eye center provide an origin point for projecting the gaze vector
-RIGHT_EYE_CENTER_3D = np.array([-65.0, 170.0, -75.0], dtype=np.float64)
-LEFT_EYE_CENTER_3D = np.array([-65.0, 170.0, -75.0], dtype=np.float64)
+# Measuring my eye center to provide an origin point for projecting the gaze vector
+RIGHT_EYE_CENTER_3D = np.array([-30.0, 40.0, -35.0], dtype=np.float64)
+LEFT_EYE_CENTER_3D = np.array([30.0, 40.0, -35.0], dtype=np.float64)
 
 # This variable lets us compute how far the iris has moved fom the center of the eye
 EYE_RADIUS = 12.0
-
-# FACE_3D_COORDINATES = np.array([
-#     [0.0, 0.0, 0.0], # nose tip is the origin
-#     [0.0, -95.0, -20.0], # chin
-#     [50.0, 40.0, -50.0], # left eye outer corner
-#     [-52.5, 45.0, -50.0], # right eye outer corner
-#     [25.0, -42.5, -25.0], # left mouth corner
-#     [-25.0, -40.0, -37.5], # right mouth corner
-# ], dtype=np.float64)
-
-# # mediapipe facemesh assigns the above face features to these indices
-# FACEMESH_INDICES = [1, 152, 263, 33, 287, 57]
-
-# # Measuring my eye center provide an origin point for projecting the gaze vector
-# RIGHT_EYE_CENTER_3D = np.array([-30.0, 40.0, -35.0], dtype=np.float64)
-# LEFT_EYE_CENTER_3D = np.array([30.0, 40.0, -35.0], dtype=np.float64)
-
-# # This variable lets us compute how far the iris has moved fom the center of the eye
-# EYE_RADIUS = 15.0
 
 def estimate_head_pose(landmarks, frame_width, frame_height):
     """
@@ -166,9 +146,7 @@ def gaze_to_screen_point(landmarks, frame_width, frame_height,
         screen_y: vertical pixel position from gaze
     """
     # compute the head pose rotation and translation
-    rotation_vector, translation_vector, camera_matrix = estimate_head_pose(landmarks,
-                                                                            frame_width,
-                                                                            frame_height)
+    rotation_vector, _, _ = estimate_head_pose(landmarks, frame_width, frame_height)
     if rotation_vector is not None:
         # rotation matrix from rotation vector
         rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
@@ -201,7 +179,7 @@ def gaze_to_screen_point(landmarks, frame_width, frame_height,
         # there can be a risk of division by zero
         if abs(gaze_world[2]) < 1e-6:
             # default to screen center
-            return screen_width_pixels / 2, screen_height_pixels / 2
+            return frame_width / 2, frame_height / 2
         
         # horizontal and vertical gaze ratios
         # positive gaze horizontal ratio means user is looking right on the screen
@@ -216,38 +194,17 @@ def gaze_to_screen_point(landmarks, frame_width, frame_height,
         h_scale = 1.0
         v_scale = 1.0
 
-        screen_x = (0.5 + gaze_horizontal_ratio*h_scale)*screen_width_pixels
-        screen_y = (0.5 + gaze_vertical_ratio*v_scale)*screen_height_pixels
+        screen_x = (0.5 + gaze_horizontal_ratio*h_scale)*frame_width
+        screen_y = (0.5 + gaze_vertical_ratio*v_scale)*frame_height
 
-        # gaze_horizontal_normalized = gaze_world[0] / np.linalg.norm(gaze_world[0])
-        # gaze_vertical_normalized = gaze_world[1] / np.linalg.norm(gaze_world[1])
-
-        # right_eye = landmarks.landmark[468]
-        # left_eye = landmarks.landmark[473]
-        # eyes_center_x = int((right_eye.x+left_eye.x)/2*frame_width)
-        # eyes_center_y = int((right_eye.y+left_eye.y)/2*frame_height)
-        # gaze_vector_x = int((eyes_center_x+gaze_world[0]*horizontal_scale_factor))
-        # gaze_vector_y = int((eyes_center_y+gaze_world[1]*vertical_scale_factor))
-
-        # horizontal_factor = 2.0
-        # vertical_factor = 2.0
-        # # estimate the x and y coordinates of the gaze
-        # screen_x = (0.5+gaze_vector_x)*horizontal_factor
-        # screen_y = (0.5+gaze_vector_y)*vertical_factor
-
-        # # # ensure the boundary of the screen is the limit of the x and y pixel coordinates
-        # # screen_x = np.clip(screen_x, 0, screen_width_pixels)
-        # # screen_y = np.clip(screen_y, 0, screen_height_pixels)
-
-        
-        return float(screen_x), float(screen_y), right_gaze, left_gaze, average_gaze_local, gaze_world, rotation_matrix
+        return float(screen_x), float(screen_y), gaze_world
     
     else:
-        return 0.5*frame_width, 0.5*frame_height, None     
+        return 0.5*frame_width, 0.5*frame_height, None
 
 class GazeSmoothTracking:
     """
-    The calibrated gaze to screen position can be jumpy as the eye moves quickly.
+    The gaze to screen position can be jumpy as the eye moves quickly.
     This class uses a moving average to make the tracking smoother for
     a better user experience.
     """
@@ -262,7 +219,6 @@ class GazeSmoothTracking:
     def update(self, x, y):
         if self.smooth_x is None:
             # initialize the moving average with the first frame's data
-            # after calibration step
             self.smooth_x, self.smooth_y = x, y
         else:
             # update the new coordinate with the computed
@@ -270,4 +226,4 @@ class GazeSmoothTracking:
             self.smooth_x = self.alpha * x + (1 - self.alpha) * self.smooth_x
             self.smooth_y = self.alpha * y + (1 - self.alpha) * self.smooth_y
 
-        return self.smooth_x, self.smooth_y
+        return int(self.smooth_x), int(self.smooth_y)

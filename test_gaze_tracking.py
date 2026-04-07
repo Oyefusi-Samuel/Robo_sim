@@ -55,7 +55,7 @@ try:
                 # print screen coordinate of gaze
                 cv2.circle(frame, (screen_x, screen_y), 5, (0, 255, 0), -1)
                 
-                # print gaze vector on the screen
+                # print gaze vector on the screen if available
                 if gaze_world is not None:
                     average_gaze = f"Gaze: [{gaze_world[0]:+.3f}, {gaze_world[1]:+.3f}, {gaze_world[2]:+.3f}]"
                     right_eye = landmarks.landmark[468]
@@ -67,8 +67,8 @@ try:
                     cv2.arrowedLine(frame, (eyes_center_x,eyes_center_y), (end_vector_x,end_vector_y), (0, 255, 0), 2, tipLength=0.3)
                 
                 frame = cv2.flip(frame, 1)  # Mirror the camera 
-
                 cv2.putText(frame, average_gaze, (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                
 
         cv2.namedWindow("Test Gaze Tracking", cv2.WINDOW_NORMAL)
         cv2.setWindowProperty("Test Gaze Tracking", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
