@@ -104,10 +104,10 @@ def create_queen(pos, color):
         [pos[0], pos[1], pos[2] + Q_HEIGHT/2])
     return qid
 
-def create_ghost():
+def create_ghost(color=[1,0.9,0,0.45]):
     gid = p.createMultiBody(0, -1,
         p.createVisualShape(p.GEOM_CYLINDER, radius=Q_RADIUS, length=Q_HEIGHT,
-                            rgbaColor=[1, 0.9, 0, 0.45]),
+                            rgbaColor=color),
         [0, 0, -5])
     return gid
 
@@ -149,10 +149,21 @@ def _hide(r, c):
     p.changeVisualShape(bid, -1, rgbaColor=[0,0,0,0])
 
 def update_highlights_2d(placed):
+    suggestions = get_suggestions(placed)
+
     for r in range(BOARD_N):
         for c in range(BOARD_N):
             #if (r,c) in placed:
             #    continue
+            #if (r, c) in suggestions:
+            #    _show(r, c, [0.2, 0.6, 1.0, 0.75])   # blue = solution path
+
+            if suggestions:
+                best_r, best_c = suggestions[0]
+                move_ghost(ghost2, sq_world(best_r, best_c))
+            else:
+                hide_ghost(ghost2)
+
             if is_safe(r, c, placed) and r not in placed:
                 if _deadlock(r, c, placed):
                     _show(r, c, [1.0, 0.55, 0.0, 0.72])   # orange = risky
@@ -334,7 +345,7 @@ def place(robot, qid, cid, dst):
 p.connect(p.GUI)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
 p.setRealTimeSimulation(0)
-p.resetDebugVisualizerCamera(1.45, 35, -28, [0.02,-0.38,0.26])
+p.resetDebugVisualizerCamera(1.11, 37.8, -48.4, [-0.12, -0.19, -0.08])  #(1.45, 35, -28, [0.02,-0.38,0.26])
 p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
 p.configureDebugVisualizer(p.COV_ENABLE_SHADOWS, 1)
 
@@ -368,6 +379,16 @@ def spawn_queens():
 
 spawn_queens()
 ghost = create_ghost()
+ghost2 = create_ghost(color=[0.2, 0.6, 1.0, 0.75])
+
+# Debug Camera Print
+def print_camera():
+    cam = p.getDebugVisualizerCamera()
+    print("\n--- CAMERA POSE ---")
+    print("Distance:", cam[10])
+    print("Yaw:", cam[8])
+    print("Pitch:", cam[9])
+    print("Target:", cam[11])
 
 # ── Game state ───────────────────────────────────────────────────────────────
 placed      = {}
@@ -402,6 +423,35 @@ def do_undo():
     status=f"Undid row {row} (was col {col})"
     print(f"\n  Undo row {row}")
 
+def leads_to_solution(row, col, placed):
+    trial = dict(placed)
+    trial[row] = col
+
+    def backtrack(r, state):
+        if r == BOARD_N:
+            return True
+        if r in state:
+            return backtrack(r + 1, state)
+
+        for c in range(BOARD_N):
+            if is_safe(r, c, state):
+                state[r] = c
+                if backtrack(r + 1, state):
+                    return True
+                del state[r]
+        return False
+
+    return backtrack(0, trial)
+
+def get_suggestions(placed):
+    suggestions = []
+    for r in range(BOARD_N):
+        if r in placed:
+            continue
+        for c in range(BOARD_N):
+            if is_safe(r, c, placed) and leads_to_solution(r, c, placed):
+                suggestions.append((r, c))
+    return suggestions
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n"+"═"*55)
 print("  N-QUEENS  —  SHARED CONTROL")
@@ -415,7 +465,6 @@ print("═"*55+"\n")
 # ═══════════════════════════════════════════════════════
 try:
     while p.isConnected():
-
         # ── Solved ───────────────────────────────────────────────────
         if len(placed) == BOARD_N:#if cur_row == BOARD_N:
             clear_all_hl(); hide_ghost(ghost); clear_hud()
