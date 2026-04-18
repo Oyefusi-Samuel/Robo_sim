@@ -380,6 +380,7 @@ def spawn_queens():
 spawn_queens()
 ghost = create_ghost()
 ghost2 = create_ghost(color=[0.2, 0.6, 1.0, 0.75])
+redraw_flag = True
 
 # Debug Camera Print
 def print_camera():
@@ -507,7 +508,9 @@ try:
         #warn    = _deadlock(cur_row, sel, placed)
 
         # Board highlights + ghost
-        update_highlights_2d(placed, failure_threshold=0.5)#update_highlights_(cur_row, safe, placed) # NOTE: Modify Reliability here
+        if redraw_flag:
+            update_highlights_2d(placed, failure_threshold=0.5)#update_highlights_(cur_row, safe, placed) # NOTE: Modify Reliability here
+            redraw_flag = False
         move_ghost(ghost, sq_world(cursor_row, cursor_col)) # cur_row, sel
 
         warn = _deadlock(cursor_row, cursor_col, placed)
@@ -572,6 +575,7 @@ try:
                 hide_ghost(ghost)
                 clear_all_hl()
                 flash_cell(r, c)
+                redraw_flag = True
 
                 src_pos = q_pos[r]
                 dst_pos = sq_world(r, c)
