@@ -148,8 +148,8 @@ def _hide(r, c):
     p.resetBasePositionAndOrientation(bid, [0,0,-5], [0,0,0,1])
     p.changeVisualShape(bid, -1, rgbaColor=[0,0,0,0])
 
-def update_highlights_2d(placed):
-    suggestions = get_suggestions(placed)
+def update_highlights_2d(placed, failure_threshold=0.0):
+    suggestions = get_suggestions(placed, failure_thresh=failure_threshold)
 
     for r in range(BOARD_N):
         for c in range(BOARD_N):
@@ -443,14 +443,23 @@ def leads_to_solution(row, col, placed):
 
     return backtrack(0, trial)
 
-def get_suggestions(placed):
+import random
+
+def get_suggestions(placed, failure_thresh=0.0):
+    roll = random.random()
     suggestions = []
     for r in range(BOARD_N):
         if r in placed:
             continue
         for c in range(BOARD_N):
             if is_safe(r, c, placed) and leads_to_solution(r, c, placed):
-                suggestions.append((r, c))
+                if roll < failure_thresh:
+                    dr = random.randint(-1, 1)
+                    dc = random.randint(-1, 1)
+                    suggestions.append(((r + dr) % BOARD_N, (c + dc) % BOARD_N))
+                else:
+                    suggestions.append((r, c))
+    
     return suggestions
 # ─────────────────────────────────────────────────────────────────────────────
 print("\n"+"═"*55)
@@ -498,7 +507,7 @@ try:
         #warn    = _deadlock(cur_row, sel, placed)
 
         # Board highlights + ghost
-        update_highlights_2d(placed)#update_highlights_(cur_row, safe, placed)
+        update_highlights_2d(placed, failure_threshold=0.5)#update_highlights_(cur_row, safe, placed) # NOTE: Modify Reliability here
         move_ghost(ghost, sq_world(cursor_row, cursor_col)) # cur_row, sel
 
         warn = _deadlock(cursor_row, cursor_col, placed)
