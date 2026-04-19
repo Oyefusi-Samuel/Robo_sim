@@ -41,8 +41,10 @@ If the gaze estimate is inaccurate, tune the horizontal_scale_factor and vertica
 ## 💻 Installation & Usage
 
 ### Prerequisites
+Expression tracking requires a Google mediapipe blendshapes model which can be downloaded with:
+
+!wget -O face_landmarker_v2_with_blendshapes.task -q https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+
 Ensure you have Python installed with the following dependencies:
 ```bash
 pip install pybullet opencv-python mediapipe numpy scikit-learn
-
-
