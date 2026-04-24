@@ -509,7 +509,7 @@ try:
 
         # Board highlights + ghost
         if redraw_flag:
-            update_highlights_2d(placed, failure_threshold=0.5)#update_highlights_(cur_row, safe, placed) # NOTE: Modify Reliability here
+            update_highlights_2d(placed, failure_threshold=0.1)#update_highlights_(cur_row, safe, placed) # NOTE: Modify Reliability here
             redraw_flag = False
         move_ghost(ghost, sq_world(cursor_row, cursor_col)) # cur_row, sel
 
