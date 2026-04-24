@@ -13,7 +13,7 @@ eyes = eye_tracking.FaceMesh(max_num_faces=1,
 cap = cv2.VideoCapture(0)  # Connect to webcam
 
 # smooth gaze vector with a moving average
-smooth_gaze_vector = gaze_tracking.GazeSmoothTracking(alpha=0.15)
+smooth_gaze_vector = gaze_tracking.GazeSmoothTracking(alpha=0.05)
 
 # get screen dimensions of main monitor
 screen_width = 3840
