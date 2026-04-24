@@ -10,6 +10,7 @@ N-Queens SHARED CONTROL
 import pybullet as p
 import pybullet_data
 import time, math, sys
+import enum
 
 # ═══════════════════════════════════════════════════════
 #  LAYOUT
@@ -45,6 +46,14 @@ PICK_Z_OFF  = 0.095
 
 FINGER_OPEN  = 0.038
 FINGER_CLOSE = 0.005
+
+class MODE(enum.Enum):
+    L1 = 1 # Only Yellow Ghost
+    L2 = 2 # Grid with just Green and Red
+    L3 = 3 # Grid with Green, Yellow, and Red
+    L4 = 4 # Blue ghost suggestion, unreliable
+    L5 = 5 # Blue ghots suggestion, fully reliable
+
 
 # ═══════════════════════════════════════════════════════
 #  WORLD
@@ -148,8 +157,11 @@ def _hide(r, c):
     p.resetBasePositionAndOrientation(bid, [0,0,-5], [0,0,0,1])
     p.changeVisualShape(bid, -1, rgbaColor=[0,0,0,0])
 
-def update_highlights_2d(placed, failure_threshold=0.0):
-    suggestions = get_suggestions(placed, failure_thresh=failure_threshold)
+def update_highlights_2d(placed, failure_threshold=0.0, mode=MODE.L5):
+    if (mode != MODE.L2) and (mode != MODE.L3):
+        suggestions = get_suggestions(placed, failure_thresh=failure_threshold)
+    else:
+        suggestions = None
 
     for r in range(BOARD_N):
         for c in range(BOARD_N):
@@ -165,8 +177,11 @@ def update_highlights_2d(placed, failure_threshold=0.0):
                 hide_ghost(ghost2)
 
             if is_safe(r, c, placed) and r not in placed:
-                if _deadlock(r, c, placed):
-                    _show(r, c, [1.0, 0.55, 0.0, 0.72])   # orange = risky
+                if mode != MODE.L2:
+                    if _deadlock(r, c, placed):
+                        _show(r, c, [1.0, 0.55, 0.0, 0.72])   # orange = risky
+                    else:
+                        _show(r, c, [0.05, 0.90, 0.15, 0.68]) # green  = safe
                 else:
                     _show(r, c, [0.05, 0.90, 0.15, 0.68]) # green  = safe
             else:
@@ -398,6 +413,7 @@ placed      = {}
 cursor_row = 0
 cursor_col = 0
 status      = "Ready — use arrows to select, ENTER to place"
+sim_mode:MODE = MODE.L4 #NOTE: Here is where to change the mode, short note on the modes at Enum class, L5 for full function
 
 def do_reset():
     global placed, status, cursor_col, cursor_row #cur_row, cursor, status
@@ -509,7 +525,7 @@ try:
 
         # Board highlights + ghost
         if redraw_flag:
-            update_highlights_2d(placed, failure_threshold=0.1)#update_highlights_(cur_row, safe, placed) # NOTE: Modify Reliability here
+            update_highlights_2d(placed, failure_threshold=0.5)#update_highlights_(cur_row, safe, placed) # NOTE: Modify Reliability here
             redraw_flag = False
         move_ghost(ghost, sq_world(cursor_row, cursor_col)) # cur_row, sel
 

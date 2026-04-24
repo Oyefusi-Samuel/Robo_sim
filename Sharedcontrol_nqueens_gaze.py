@@ -26,6 +26,7 @@ import time, math, sys, threading
 import cv2
 import numpy as np
 
+from expression_tracking import compute_expression
 import gaze_tracking                               # provided gaze_tracking.py
 from mediapipe.python.solutions import face_mesh as mp_face_mesh
 

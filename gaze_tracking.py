@@ -184,15 +184,20 @@ def gaze_to_screen_point(landmarks, frame_width, frame_height,
         # horizontal and vertical gaze ratios
         # positive gaze horizontal ratio means user is looking right on the screen
         # positive vertical ratio means the user is looking up
-        gaze_horizontal_ratio = ((3*gaze_world[0]) / gaze_world[2])
-        gaze_vertical_ratio = ((3*gaze_world[1]) / gaze_world[2])
+
+        # using gaze world [2] makes the tracking too sensitive to head pose
+        # gaze_horizontal_ratio = ((3*gaze_world[0]) / gaze_world[2])
+        # gaze_vertical_ratio = ((3*gaze_world[1]) / gaze_world[2])
+
+        gaze_horizontal_ratio = gaze_world[0]
+        gaze_vertical_ratio = gaze_world[1]
 
         # account for how sensitive the screen gaze
         # location estimate is to the gaze angle
         # these parameters can be modified to ensure
         # better gaze tracking performance
-        h_scale = 1.0
-        v_scale = 1.0
+        h_scale = 5.0
+        v_scale = 5.0
 
         screen_x = (0.5 + gaze_horizontal_ratio*h_scale)*frame_width
         screen_y = (0.5 + gaze_vertical_ratio*v_scale)*frame_height
