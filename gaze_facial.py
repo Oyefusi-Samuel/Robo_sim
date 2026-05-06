@@ -978,5 +978,5 @@ finally:
     except: pass
     cv2.destroyAllWindows()
     try: p.disconnect()
-    except: pass
+    except: pass 
     print("  Disconnected.")
